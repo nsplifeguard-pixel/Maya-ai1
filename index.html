@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="th"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MAYA AI</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#02060f">
+<style>
+:root{--bg:#02060f;--panel:#07142b;--line:#12315f;--glow:#1ea8ff;--tx:#eaf4ff;--mut:#7f9cc4}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:radial-gradient(circle at 50% -10%,#0a2a5e,var(--bg) 60%);color:var(--tx);font-family:system-ui,"Noto Sans Thai",sans-serif;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px}
+h1{font-size:18px;letter-spacing:4px;margin:0;text-shadow:0 0 12px var(--glow)}
+button{background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;cursor:pointer}
+button:active{box-shadow:0 0 12px var(--glow)}
+.orbwrap{display:flex;flex-direction:column;align-items:center;padding:4px 0}
+#orb{width:84px;height:84px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#bfe6ff,var(--glow) 40%,#043a8a 80%);box-shadow:0 0 30px var(--glow);animation:idle 4s ease-in-out infinite}
+#orb.listening{animation:pulse .8s infinite;background:radial-gradient(circle at 35% 30%,#fff,#3df,#067)}
+#orb.thinking{animation:spin 1.2s linear infinite;filter:hue-rotate(40deg)}
+#orb.speaking{animation:pulse .5s infinite}
+@keyframes idle{50%{transform:scale(1.06)}}@keyframes pulse{50%{transform:scale(1.18);box-shadow:0 0 60px var(--glow)}}@keyframes spin{to{transform:rotate(360deg)}}
+#status{color:var(--mut);font-size:13px;margin-top:8px;min-height:18px}
+#chat{flex:1;overflow-y:auto;padding:8px 14px;display:flex;flex-direction:column;gap:10px}
+.m{max-width:85%;padding:10px 14px;border-radius:16px;white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
+.u{align-self:flex-end;background:#0b3b7c}.a{align-self:flex-start;background:var(--panel);border:1px solid var(--line)}
+#err{display:none;margin:0 14px;padding:10px;border-radius:10px;background:#3a0b14;border:1px solid #a33}
+form{display:flex;gap:8px;padding:10px 14px}
+input,textarea{flex:1;background:var(--panel);color:var(--tx);border:1px solid var(--line);border-radius:12px;padding:12px;font:inherit;min-width:0}
+.drawer{position:fixed;inset:0;background:#000c;display:none;z-index:5}
+.drawer.on{display:flex}.sheet{background:var(--bg);border:1px solid var(--line);width:min(340px,90%);padding:14px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+.sheet.r{margin-left:auto}.item{text-align:left}
+label{font-size:13px;color:var(--mut)}
+</style></head><body>
+<header>
+ <button id="bHist" aria-label="ประวัติ">☰</button><h1>MAYA AI</h1>
+ <div><button id="bTts" aria-label="เสียงตอบกลับ">🔊</button> <button id="bNew" aria-label="แชทใหม่">＋</button> <button id="bSet" aria-label="ตั้งค่า">⚙</button></div>
+</header>
+<div class="orbwrap"><div id="orb"></div><div id="status">พร้อมใช้งาน</div></div>
+<div id="chat"></div><div id="err"></div>
+<form id="f"><button type="button" id="bMic" aria-label="พูด">🎤</button><input id="in" placeholder="พิมพ์ข้อความ..." autocomplete="off"><button>ส่ง</button></form>
+
+<div class="drawer" id="dH"><div class="sheet"><b>ประวัติการสนทนา</b><div id="hist" style="display:flex;flex-direction:column;gap:6px"></div><button id="cH">ปิด</button></div></div>
+<div class="drawer" id="dS"><div class="sheet r"><b>ตั้งค่า</b>
+ <label>ความเร็วเสียง <span id="rv"></span></label><input type="range" id="rate" min="0.6" max="1.6" step="0.1" style="padding:0">
+ <label>ความจำที่อนุญาตให้ MAYA ใช้ (ผู้ใช้ควบคุมเอง)</label><textarea id="mem" rows="5" placeholder="เช่น ชื่อเล่น งานที่ทำ..."></textarea>
+ <label>บันทึก/สิ่งที่ต้องทำ (1 บรรทัด = 1 รายการ)</label><textarea id="todo" rows="5"></textarea>
+ <button id="delAll">🗑 ลบประวัติและข้อมูลทั้งหมด</button><button id="cS">ปิด</button></div></div>
+
+<script>
+const $=id=>document.getElementById(id),LS=localStorage;
+const load=(k,d)=>{try{return JSON.parse(LS.getItem(k))??d}catch{return d}};
+let chats=load('maya_chats',[]),cur=null,S=load('maya_set',{tts:true,rate:1,mem:'',todo:''});
+const save=()=>{LS.setItem('maya_chats',JSON.stringify(chats));LS.setItem('maya_set',JSON.stringify(S))};
+const setSt=(c,t)=>{$('orb').className=c;$('status').textContent=t};
+const showErr=t=>{$('err').style.display=t?'block':'none';$('err').textContent=t||''};
+function newChat(){cur={id:Date.now(),title:'สนทนาใหม่',msgs:[]};chats.unshift(cur);render();save()}
+function render(){$('chat').innerHTML='';if(!cur.msgs.length)add('a','สวัสดีค่ะ ฉันคือ MAYA AI ผู้ช่วยส่วนตัวของคุณ พิมพ์หรือกดไมค์เพื่อพูดได้เลยค่ะ');cur.msgs.forEach(m=>add(m.role==='user'?'u':'a',m.content));$('bTts').textContent=S.tts?'🔊':'🔇'}
+function add(c,t){const d=document.createElement('div');d.className='m '+c;d.textContent=t;$('chat').appendChild(d);$('chat').scrollTop=1e9}
+function speak(t){if(!S.tts||!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='th-TH';u.rate=S.rate;u.onstart=()=>setSt('speaking','กำลังพูด...');u.onend=()=>setSt('','พร้อมใช้งาน');speechSynthesis.speak(u)}
+async function send(text){text=text.trim();if(!text)return;showErr();
+ cur.msgs.push({role:'user',content:text});if(cur.msgs.length===1)cur.title=text.slice(0,30);add('u',text);setSt('thinking','กำลังคิด...');save();
+ try{const r=await fetch('/api/chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:cur.msgs.slice(-20),memory:S.mem+(S.todo?'\nรายการที่ต้องทำ:\n'+S.todo:'')})});
+  const d=await r.json();if(!r.ok)throw new Error(d.error||'เกิดข้อผิดพลาด');
+  cur.msgs.push({role:'assistant',content:d.reply});add('a',d.reply);save();setSt('','พร้อมใช้งาน');speak(d.reply)
+ }catch(e){cur.msgs.pop();save();setSt('','พร้อมใช้งาน');showErr('⚠ '+e.message+' (ลองใหม่อีกครั้ง)')}}
+$('f').onsubmit=e=>{e.preventDefault();const v=$('in').value;$('in').value='';send(v)};
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec;
+$('bMic').onclick=()=>{if(!SR)return showErr('อุปกรณ์/เบราว์เซอร์นี้ไม่รองรับการรู้จำเสียง กรุณาพิมพ์ข้อความแทน (แนะนำ Chrome/Safari)');
+ speechSynthesis.cancel();rec=new SR();rec.lang='th-TH';rec.onstart=()=>setSt('listening','กำลังฟัง...');
+ rec.onresult=e=>send(e.results[0][0].transcript);rec.onerror=e=>{setSt('','พร้อมใช้งาน');showErr(e.error==='not-allowed'?'ไม่ได้รับอนุญาตใช้ไมโครโฟน':'รับเสียงไม่สำเร็จ ('+e.error+')')};
+ rec.onend=()=>{if($('orb').className==='listening')setSt('','พร้อมใช้งาน')};rec.start()};
+$('bTts').onclick=()=>{S.tts=!S.tts;if(!S.tts)speechSynthesis.cancel();save();render()};
+$('bNew').onclick=newChat;
+function drawer(id,on){$(id).classList.toggle('on',on)}
+$('bHist').onclick=()=>{const h=$('hist');h.innerHTML='';chats.forEach(c=>{const b=document.createElement('button');b.className='item';b.textContent=c.title;b.onclick=()=>{cur=c;render();drawer('dH',0)};h.appendChild(b)});drawer('dH',1)};
+$('cH').onclick=()=>drawer('dH',0);$('cS').onclick=()=>{S.mem=$('mem').value;S.todo=$('todo').value;save();drawer('dS',0)};
+$('bSet').onclick=()=>{$('rate').value=S.rate;$('rv').textContent=S.rate;$('mem').value=S.mem;$('todo').value=S.todo;drawer('dS',1)};
+$('rate').oninput=e=>{S.rate=+e.target.value;$('rv').textContent=S.rate;save()};
+$('delAll').onclick=()=>{if(confirm('ลบประวัติและข้อมูลทั้งหมดในอุปกรณ์นี้?')){LS.removeItem('maya_chats');LS.removeItem('maya_set');chats=[];S={tts:true,rate:1,mem:'',todo:''};drawer('dS',0);newChat()}};
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+cur=chats[0]||null;if(!cur)newChat();else render();
+</script></body></html>
